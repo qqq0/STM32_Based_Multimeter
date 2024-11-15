@@ -1,0 +1,6 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "Symbols")(type "KiCad")(uri "${KIPRJMOD}/Symbols.pretty")(options "")(descr ""))
+  (lib (name "LeoDJ KiCad lib")(type "KiCad")(uri "${KIPRJMOD}/LeoDJ KiCad lib.pretty")(options "")(descr ""))
+  (lib (name "LeoDJ-kicad")(type "KiCad")(uri "${KIPRJMOD}/LeoDJ KiCad lib/LeoDJ-kicad.pretty")(options "")(descr ""))
+)
