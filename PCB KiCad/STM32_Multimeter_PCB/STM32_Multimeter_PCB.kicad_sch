@@ -3535,6 +3535,10 @@
     (uuid fec01970-09ab-4bb7-80d8-99fe963e89a1)
   )
 
+  (text "Ichrg = 1000/R = 1000/2000 =0,5 A" (at 173.7868 54.2544 0)
+    (effects (font (size 0.64 0.64)) (justify left bottom))
+    (uuid 1ddb45ed-c1c0-4bdd-8c95-0808e41bbcd7)
+  )
   (text "Lowpass filter \nfc=1/(2pi(LC)^1/2)=\n1/(2pi(10*10^-6*4,7*10^-6)^1/2)=\n23,22 kHz"
     (at 137.5664 72.2884 0)
     (effects (font (size 0.64 0.64)) (justify left bottom))
@@ -4361,8 +4365,8 @@
     (property "Value" "Conn_01x02_Pin" (at 273.5072 36.7284 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical" (at 270.256 33.9852 0)
-      (effects (font (size 1.27 1.27)) hide)
+    (property "Footprint" "moje_elementy:batt" (at 270.256 33.9852 0)
+      (effects (font (size 1.27 1.27)))
     )
     (property "Datasheet" "~" (at 270.256 33.9852 0)
       (effects (font (size 1.27 1.27)) hide)
