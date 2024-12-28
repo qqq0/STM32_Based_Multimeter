@@ -74,8 +74,6 @@ void Error_Handler(void);
 #define I_GPIO_Port GPIOA
 #define charge_LC_Pin GPIO_PIN_4
 #define charge_LC_GPIO_Port GPIOA
-#define LC_input_Pin GPIO_PIN_5
-#define LC_input_GPIO_Port GPIOA
 #define L_on_Pin GPIO_PIN_6
 #define L_on_GPIO_Port GPIOA
 #define C_on_Pin GPIO_PIN_7
@@ -88,6 +86,8 @@ void Error_Handler(void);
 #define B_GPIO_Port GPIOB
 #define C_Pin GPIO_PIN_6
 #define C_GPIO_Port GPIOB
+#define X_Pin GPIO_PIN_7
+#define X_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

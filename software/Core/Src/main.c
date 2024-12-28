@@ -22,12 +22,32 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stdbool.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+//Multiplexer settings
+#define voltage 0x09
+#define voltage_1_10 0x00
+#define voltage_1_100 0x03
+#define current_0_1A 0x01
+#define current_1A 0x06
+#define curremt_10A 0x07
+#define resistance_100 0x02
+#define resistance_1k	0x05
+#define resistance_100k 0x04
 
+typedef enum {
+	IDLE,
+	VOLTAGE,
+	RESISTANECE,
+	CURRENT,
+	CONTINUITY,
+	POWER,
+	INDUCTANCE,
+	CAPACITANCE
+}State;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -49,6 +69,8 @@ IPCC_HandleTypeDef hipcc;
 
 RTC_HandleTypeDef hrtc;
 
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
@@ -64,14 +86,142 @@ static void MX_USART1_UART_Init(void);
 static void MX_IPCC_Init(void);
 static void MX_RTC_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM2_Init(void);
 static void MX_RF_Init(void);
 /* USER CODE BEGIN PFP */
+void setMux(int val){
+
+	if(val<=0x07){								// if value is out of range set input X to 0
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, 1);
+	}else{
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, 0);
+	}
+
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, (val & 0x01) ? 1 : 0);	//val sets A B C inputs, for example val = 3 -> 0b011 -> A = 0 B = 1 C = 1
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, (val & 0x02) ? 1 : 0);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, (val & 0x04) ? 1 : 0);
+}
+
+void ADC_SetActiveChannel(ADC_HandleTypeDef *hadc, uint32_t AdcChannel)
+{
+  ADC_ChannelConfTypeDef sConfig = {0};
+  sConfig.Channel = AdcChannel;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(hadc, &sConfig) != HAL_OK)
+  {
+   Error_Handler();
+  }
+}
+
+float getVoltge(){
+
+	uint32_t raw_v;
+
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, 0);		//set relay to voltage AFE
+	setMux(voltage_1_100);
+	HAL_Delay(100);
+
+	ADC_SetActiveChannel(&hadc1, ADC_CHANNEL_6);	//set adc channel to voltage input
+	HAL_ADC_Start(&hadc1);
+
+	HAL_ADC_PollForConversion(&hadc1, 100);
+	raw_v = 100*HAL_ADC_GetValue(&hadc1);
+
+	if(raw_v<4000){
+		setMux(voltage_1_10);
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 100);
+		raw_v = 10*HAL_ADC_GetValue(&hadc1);
+	}
+
+	if(raw_v<4000){
+		setMux(voltage);
+		HAL_ADC_PollForConversion(&hadc1, 100);
+		raw_v = HAL_ADC_GetValue(&hadc1);
+	}
+
+	float V = (raw_v/4095.0f)*3.3f;
+	return V;
+}
+
+float getResistance(){
+	float R;
+	int adc;
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, 1);		//set relay to resistance AFE
+	setMux(resistance_100k);
+	HAL_Delay(100);
+
+	ADC_SetActiveChannel(&hadc1, ADC_CHANNEL_7);	//set adc channel to resistance input
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 100);
+
+	adc = HAL_ADC_GetValue(&hadc1);
+	R = (100000*adc/4095.0f)/(1-adc/4095.0f);
+
+	if(R<10000){
+		setMux(resistance_1k);
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 100);
+		adc = HAL_ADC_GetValue(&hadc1);
+		R = (1000*adc/4095.0f)/(1-adc/4095.0f);
+	}
+	if(R<1000){
+		setMux(resistance_100);
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 100);
+		adc = HAL_ADC_GetValue(&hadc1);
+		R = (100*adc/4095.0f)/(1-adc/4095.0f);
+	}
+	return R;
+}
+
+float getCurrent(){		// disconects breafly when swiching range because multiplexer can operate one output at the time - to fix it you need to swich one range off after siching on different one first
+	float I;
+	int adc;
+	setMux(curremt_10A);
+	HAL_Delay(10);
+
+	ADC_SetActiveChannel(&hadc1, ADC_CHANNEL_8);	//set adc channel to current input
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 100);
+
+	adc = HAL_ADC_GetValue(&hadc1);
+	I = (adc/4095.0f)*3.3f*10;	// V/R resistance is 1/100 ohm with 10x amplifier -> V/10*1/100 -> V*10
+
+	if(I<1){
+		setMux(current_1A);
+		HAL_Delay(10);
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 100);
+		adc = HAL_ADC_GetValue(&hadc1);
+		I = (adc/4095.0f)*3.3f*1;	// V/R resistance is 1/10 ohm with 10x amplifier -> V/10*1/10 -> V*1
+	}
+
+	if(I<0.1f){
+			setMux(current_0_1A);
+			HAL_Delay(10);
+			HAL_ADC_Start(&hadc1);
+			HAL_ADC_PollForConversion(&hadc1, 100);
+			adc = HAL_ADC_GetValue(&hadc1);
+			I = (adc/4095.0f)*3.3f*0.1f;	// V/R resistance is 1 ohm with 10x amplifier -> V/10*1 -> V*0.1
+		}
+	return I;
+}
+float getInductance();
+float getCapacitance();
+
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void sendDataBle(uint8_t* data, uint16_t length){
+//	tBleStatus status;
 
+//	status = Custom_STM_App_Update_Char(CUSTOM_STM_CHARWRITE, data);
+
+}
 /* USER CODE END 0 */
 
 /**
@@ -116,9 +266,10 @@ int main(void)
   MX_USB_Device_Init();
   MX_RTC_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   MX_RF_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_ADC_Start(&hadc1);
   /* USER CODE END 2 */
 
   /* Init code for STM32_WPAN */
@@ -417,6 +568,54 @@ static void MX_RTC_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 63;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -484,7 +683,8 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, charge_LC_Pin|L_on_Pin|C_on_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, Relay_Pin|A_Pin|B_Pin|C_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, Relay_Pin|A_Pin|B_Pin|C_Pin
+                          |X_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : BU1_Pin BU2_Pin */
   GPIO_InitStruct.Pin = BU1_Pin|BU2_Pin;
@@ -499,14 +699,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LC_input_Pin */
-  GPIO_InitStruct.Pin = LC_input_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(LC_input_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : Relay_Pin A_Pin B_Pin C_Pin */
-  GPIO_InitStruct.Pin = Relay_Pin|A_Pin|B_Pin|C_Pin;
+  /*Configure GPIO pins : Relay_Pin A_Pin B_Pin C_Pin
+                           X_Pin */
+  GPIO_InitStruct.Pin = Relay_Pin|A_Pin|B_Pin|C_Pin
+                          |X_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
