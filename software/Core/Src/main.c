@@ -107,7 +107,7 @@ void ADC_SetActiveChannel(ADC_HandleTypeDef *hadc, uint32_t AdcChannel)
   ADC_ChannelConfTypeDef sConfig = {0};
   sConfig.Channel = AdcChannel;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_6CYCLES_5;
   if (HAL_ADC_ConfigChannel(hadc, &sConfig) != HAL_OK)
   {
    Error_Handler();
@@ -216,6 +216,41 @@ float getCapacitance();
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+volatile float frequency = 0;
+volatile uint32_t capture_current = 0;
+volatile uint32_t capture_previous = 0;
+volatile uint32_t time_diff_us = 0;
+volatile bool first_captured = 0;
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
+	if(htim->Instance == TIM2){
+		if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1){
+
+
+			capture_current = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+
+			if(first_captured){
+
+				if(capture_current >= capture_previous){
+					time_diff_us = capture_current - capture_previous;
+				}else{
+					time_diff_us = (0xFFFF - capture_previous) + capture_current + 1;
+				}
+
+				frequency = time_diff_us == 0 ? 0xFFFF : 1000000.0f/time_diff_us;  //10^6 to get frequency in Hz
+
+			}else{
+				first_captured = 1;
+			}
+
+			capture_previous = capture_current;
+
+		}
+	}
+}
+
+
+
 void sendDataBle(uint8_t* data, uint16_t length){
 //	tBleStatus status;
 
@@ -270,6 +305,7 @@ int main(void)
   MX_RF_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start(&hadc1);
+  HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_1);
   /* USER CODE END 2 */
 
   /* Init code for STM32_WPAN */
@@ -579,6 +615,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_IC_InitTypeDef sConfigIC = {0};
 
@@ -591,6 +628,15 @@ static void MX_TIM2_Init(void)
   htim2.Init.Period = 4294967295;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -713,6 +759,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 
 /* USER CODE END 4 */
 
