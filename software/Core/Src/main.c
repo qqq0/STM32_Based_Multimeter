@@ -208,8 +208,8 @@ float getCurrent(){		// disconects breafly when swiching range because multiplex
 		}
 	return I;
 }
-float getInductance();
-float getCapacitance();
+
+
 
 
 /* USER CODE END PFP */
@@ -247,6 +247,43 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 
 		}
 	}
+}
+
+const float pi = 3.1416;
+const float ref_C = 0.000001;
+const float ref_L = 0.000001;
+
+float getInductance(){
+	float L;
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, 1);
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 1); // charge
+	HAL_Delay(10);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 0);
+	HAL_Delay(100);							//time for LC oscillation and frequency capture
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, 0);
+
+	L=1000000/((2*pi*frequency)*(2*pi*frequency)*ref_C);	// result in uH
+
+	return L;
+}
+float getCapacitance(){
+	float C;
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, 1);
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 1); // charge
+	HAL_Delay(10);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 0);
+	HAL_Delay(100);							//time for LC oscillation and frequency capture
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, 0);
+
+	C=1000000/((2*pi*frequency)*(2*pi*frequency)*ref_L);	// result in uF
+
+	return C;
 }
 
 
