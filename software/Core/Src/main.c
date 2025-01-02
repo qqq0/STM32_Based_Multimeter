@@ -23,6 +23,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stdbool.h"
+#include "usbd_cdc_if.h"
+#include "stdio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,8 +48,9 @@ typedef enum {
 	CONTINUITY,
 	POWER,
 	INDUCTANCE,
-	CAPACITANCE
-}State;
+	CAPACITANCE,
+	STATE_COUNT
+}State_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -294,6 +297,8 @@ void sendDataBle(uint8_t* data, uint16_t length){
 //	status = Custom_STM_App_Update_Char(CUSTOM_STM_CHARWRITE, data);
 
 }
+
+State_t state = IDLE;
 /* USER CODE END 0 */
 
 /**
@@ -343,6 +348,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start(&hadc1);
   HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_1);
+
+
+
+  uint8_t msg[50] = "test\n\r";
+
+  float measurement;
+
   /* USER CODE END 2 */
 
   /* Init code for STM32_WPAN */
@@ -352,6 +364,60 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  switch (state) {
+	  	  case IDLE:
+	  		  // Switch off all outputs:
+	  		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 0);
+	  		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, 0);
+	  		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, 0);
+	  		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, 0);
+	  		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, 0);
+	  		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, 0);
+	  		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, 0);
+	  		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, 0);
+	  		  HAL_Delay(250);
+
+	  	  case VOLTAGE:
+	  		  measurement = getVoltge();
+	  		  sprintf(msg,"V: %f /r/n",measurement);
+
+	  	  case RESISTANECE:
+	  		  measurement = getResistance();
+	  		  sprintf(msg,"R: %f /r/n",measurement);
+
+	  	  case CURRENT:
+	  		  measurement = getCurrent();
+	  		  sprintf(msg,"I: %f /r/n",measurement);
+
+	  	  case CONTINUITY:
+	  		  measurement = getResistance();
+	  		  if(measurement<100){		// continuity is detected if connection has low resistance
+	  			  measurement = 1;
+	  		  }else{
+	  			  measurement = 0;
+	  		  }
+	  		sprintf(msg,"CON: %d /r/n",(int)measurement);
+
+	  	  case POWER:
+	  		measurement = getVoltge();
+	  		measurement = measurement*getCurrent();
+	  		sprintf(msg,"P: %f /r/n");
+
+	  	  case INDUCTANCE:
+	  		  measurement = getInductance();
+	  		  sprintf(msg,"L: %f uH/r/n");
+
+	  	  case CAPACITANCE:
+	  		  measurement = getCapacitance();
+	  		  sprintf(msg,"C: %f uH/r/n");
+
+	  	  default:
+	  		  state = IDLE;
+	  }
+
+
+	  CDC_Transmit_FS(msg, sizeof(msg));
+	  HAL_Delay(250);
     /* USER CODE END WHILE */
     MX_APPE_Process();
 
@@ -771,8 +837,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : BU1_Pin BU2_Pin */
   GPIO_InitStruct.Pin = BU1_Pin|BU2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : charge_LC_Pin L_on_Pin C_on_Pin */
@@ -791,12 +857,31 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
 
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){		// interrupt triggered on rising edge
+		if(GPIO_Pin == GPIO_PIN_14){	// pin with internal pulldown
+			state++;
+			if(state >= STATE_COUNT){
+				state = IDLE;
+			}
+		}
+		if(GPIO_Pin == GPIO_PIN_15){	// pin with internal pulldown
+			if(state == IDLE){
+				state = STATE_COUNT-1;
+			}else{
+				state--;
+			}
+		}
+}
 
 /* USER CODE END 4 */
 
